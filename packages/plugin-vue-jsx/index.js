@@ -9,6 +9,7 @@ const hash = require('hash-sum')
  * @returns {import('vite').Plugin}
  */
 function vueJsxPlugin(options = {}) {
+  console.log({ options })
   let needHmr = false
   let needSourceMap = true
 
@@ -35,7 +36,8 @@ function vueJsxPlugin(options = {}) {
       needSourceMap = config.command === 'serve' || !!config.build.sourcemap
     },
 
-    transform(code, id) {
+    transform(code, id, ssr = !!options.ssr) {
+      console.log({ ssr, id })
       if (/\.[jt]sx$/.test(id)) {
         const plugins = [importMeta, [jsx, options]]
         if (id.endsWith('.tsx')) {
@@ -52,6 +54,21 @@ function vueJsxPlugin(options = {}) {
           sourceMaps: needSourceMap,
           sourceFileName: id
         })
+
+        // SSR module registration by wrapping user setup
+        if (ssr) {
+          result.code += [
+            `import { useSSRContext } from 'vue'`,
+            `const _sfc_setup = __default__.setup`,
+            `__default__.setup = (props, ctx) => {`,
+            `  const ssrContext = useSSRContext()`,
+            `  ;(ssrContext.modules || (ssrContext.modules = new Set())).add(${JSON.stringify(
+              id
+            )})`,
+            `  return _sfc_setup ? _sfc_setup(props, ctx) : undefined`,
+            `}`
+          ].join('\n')
+        }
 
         if (!needHmr) {
           return {
@@ -166,6 +183,8 @@ function vueJsxPlugin(options = {}) {
 
           result.code = code
         }
+
+        console.log({ code: result.code })
 
         return {
           code: result.code,
